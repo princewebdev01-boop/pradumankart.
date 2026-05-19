@@ -1,0 +1,141 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "An ecommerce product",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "discount": { "type": "number" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "category": { "type": "string" },
+        "stock": { "type": "number" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "isAssured": { "type": "boolean" },
+        "sectionId": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "category", "images"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A customer order",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "deliveryFee": { "type": "number" },
+        "status": { "type": "string", "enum": ["Processing", "Payment Verification Pending", "Confirmed", "Packed", "Shipped", "Out for Delivery", "Delivered", "Cancelled"] },
+        "paymentMethod": { "type": "string", "enum": ["COD", "UPI", "Razorpay"] },
+        "paymentDetails": {
+          "type": "object",
+          "properties": {
+            "utr": { "type": "string" },
+            "status": { "type": "string" },
+            "screenshot": { "type": "string" }
+          }
+        },
+        "address": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "estimatedDelivery": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "items", "totalAmount"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Extended user information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "mobile": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "blocked"] },
+        "totalOrders": { "type": "number" },
+        "totalSpend": { "type": "number" },
+        "address": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" },
+        "provider": { "type": "string" }
+      }
+    },
+    "orderCounters": {
+      "title": "Order Counter",
+      "description": "Sequence counter for PK-style Order IDs",
+      "type": "object",
+      "properties": {
+        "current": { "type": "number" }
+      }
+    },
+    "transactions": {
+      "title": "UTR Registry",
+      "description": "Registry for duplicate UTR detection",
+      "type": "object",
+      "properties": {
+        "utr": { "type": "string" },
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["utr", "orderId"]
+    "Banner": {
+      "type": "object",
+      "properties": {
+        "image": { "type": "string" },
+        "link": { "type": "string" },
+        "active": { "type": "boolean" },
+        "order": { "type": "number" }
+      }
+    },
+    "Section": {
+      "title": "Homepage Section",
+      "description": "Dynamic row on homepage",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "type": { "type": "string", "enum": ["products", "banner", "categories"] },
+        "order": { "type": "number" },
+        "active": { "type": "boolean" },
+        "config": { "type": "object" }
+      },
+      "required": ["title", "type", "order"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Discount coupon code",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "discountValue": { "type": "number" },
+        "minOrderAmount": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiryDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "discountType", "discountValue", "active"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": { "schema": "Product", "description": "Product collection" },
+    "/orders/{orderId}": { "schema": "Order", "description": "Order collection" },
+    "/banners/{bannerId}": { "schema": "Banner", "description": "Banner collection" },
+    "/sections/{sectionId}": { "schema": "Section", "description": "Homepage sections" },
+    "/users/{userId}": { "schema": "object", "description": "User profiles" },
+    "/transactions/{transactionId}": { "schema": "transactions", "description": "UTR registry for deduplication" },
+    "/orderCounters/{counterId}": { "schema": "orderCounters", "description": "Order sequence metadata" },
+    "/coupons/{couponId}": { "schema": "Coupon", "description": "Discount coupons collection" }
+  }
+}

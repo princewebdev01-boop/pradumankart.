@@ -1,0 +1,99 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'princemahto131@gmail.com' ||
+        request.auth.token.email == 'praduman589@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Public Collections
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /sections/{sectionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Private/Protected Collections
+    match /orders/{orderId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Admin can update any field (status, payment verification)
+      // Users can only cancel their own order if status is 'Processing' or 'Payment Verification Pending'
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        resource.data.userId == request.auth.uid && 
+        request.resource.data.status == 'Cancelled' && 
+        (resource.data.status == 'Processing' || resource.data.status == 'Payment Verification Pending') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        request.auth.uid == userId && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'email', 'createdAt'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /orderCounters/{counterId} {
+      // Users need to read and update the counter to generate a unique PK-series order ID
+      allow read, update: if isSignedIn();
+      // Only admins can delete or create new types of counters
+      allow create, delete: if isAdmin();
+    }
+
+    match /transactions/{utr} {
+      // UTR uniqueness check: user can read/create their own or check existing ones
+      allow read, create: if isSignedIn();
+    }
+
+    match /coupons/{couponId} {
+      // All signed in users can read coupons to apply them
+      allow read: if isSignedIn();
+      // Only admins can write coupons
+      allow write: if isAdmin();
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

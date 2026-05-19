@@ -1,0 +1,8 @@
+{
+  "name": "PradumanKart",
+  "description": "Professional high-performance eCommerce platform with real-time Firestore sync, dynamic homepage orchestration, secure checkout flow, and a fully responsive admin control center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
