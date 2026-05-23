@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ShoppingCart } from 'lucide-react';
 import { auth } from './lib/firebase';
@@ -47,6 +47,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // 0. Handle Google Sign-In redirect result on mount
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result && result.user) {
+          console.log('Google redirect login success, syncing user:', result.user);
+          await syncUserToFirestore(result.user, 'google');
+          setUser(result.user);
+        }
+      })
+      .catch((error: any) => {
+        console.error('Error handling Google Sign-In redirect:', error);
+      });
+
     // 1. Initial local state check for admin session persistence (vital for clean reloads and Vercel hosting)
     const savedAdminSession = localStorage.getItem('admin_session');
     if (savedAdminSession === 'true') {

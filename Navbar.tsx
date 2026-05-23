@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Mail, Lock, Eye, EyeOff, ShoppingCart, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
 import { auth, activeFirebaseConfig } from '../../lib/firebase';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useAuthStore } from '../../store/useAuthStore';
 
 interface LoginModalProps {

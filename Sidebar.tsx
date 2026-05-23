@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Menu, ShoppingCart, Bell, Heart, Package, LayoutDashboard, ChevronDown, User, Plus, Search, ArrowLeft } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
 import { useCartStore } from '../../store/useCartStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWishlistStore } from '../../store/useWishlistStore';
