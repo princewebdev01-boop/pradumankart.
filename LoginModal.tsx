@@ -1,272 +1,414 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { collection, onSnapshot, updateDoc, doc, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import { ShoppingBag, ChevronDown, CheckCircle, Truck, Package, Clock, XCircle, Search, Filter, ShieldCheck, AlertCircle, Copy, BarChart3, TrendingUp, History, Eye, CheckCircle2, MapPin, Camera } from 'lucide-react';
+import { formatINR } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Mail, Lock, Eye, EyeOff, ShoppingCart, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
-import { auth, activeFirebaseConfig } from '../../lib/firebase';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { useAuthStore } from '../../store/useAuthStore';
 
-interface LoginModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+const STATUS_OPTIONS = [
+  'Processing',
+  'Payment Verification Pending',
+  'Confirmed',
+  'Packed',
+  'Shipped',
+  'Out for Delivery',
+  'Delivered',
+  'Cancelled'
+];
 
-export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [unauthorizedDomain, setUnauthorizedDomain] = useState(false);
-  const [popupBlocked, setPopupBlocked] = useState(false);
-  const { setUser, loginWithGoogle } = useAuthStore();
+export default function OrderManager() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [showScreenshot, setShowScreenshot] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      setUser(userCredential.user);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to login');
-    } finally {
+  useEffect(() => {
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
-    }
+    }, (error) => {
+      console.error('Error fetching orders:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Analytics Calculation
+  const stats = {
+    totalRevenue: orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Payment Verification Pending').reduce((acc, o) => acc + (o.totalAmount || 0), 0),
+    pendingVerification: orders.filter(o => o.status === 'Payment Verification Pending').length,
+    todayOrders: orders.filter(o => {
+        const date = o.createdAt?.toDate?.();
+        return date && date.toDateString() === new Date().toDateString();
+    }).length,
+    successRate: (orders.filter(o => o.status === 'Delivered').length / (orders.filter(o => o.status !== 'Cancelled').length || 1) * 100).toFixed(0)
   };
 
-  const handleGoogleLogin = async () => {
-    setError('');
-    setUnauthorizedDomain(false);
-    setPopupBlocked(false);
+  const updateStatus = async (orderId: string, newStatus: string) => {
     try {
-      await loginWithGoogle();
-      onClose();
-    } catch (err: any) {
-      console.error('Google Login Error:', err);
-      const isPopupError = err.code === 'auth/popup-blocked' || 
-                           err.code === 'auth/cancelled-popup-request' || 
-                           (err.message && (err.message.includes('popup-blocked') || err.message.includes('cancelled-popup-request')));
-
-      if (err.code === 'auth/unauthorized-domain' || (err.message && err.message.includes('unauthorized-domain'))) {
-        setError('Google Login Error: Firebase has blocked this domain as Unauthorized. Please add this domain in Firebase Console.');
-        setUnauthorizedDomain(true);
-      } else if (isPopupError) {
-        setError('Google Login Popup Error: The popup was either blocked by your browser or cancelled.');
-        setPopupBlocked(true);
-      } else {
-        setError(err.message || 'Google login failed');
-      }
+      await updateDoc(doc(db, 'orders', orderId), { 
+        status: newStatus, 
+        updatedAt: serverTimestamp() 
+      });
+    } catch (e) {
+      console.error('Error updating status:', e);
+      alert('Failed to update status');
     }
   };
+
+  const approvePayment = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'Confirmed',
+        'paymentDetails.status': 'verified',
+        updatedAt: serverTimestamp()
+      });
+      alert('Payment Verified: Order Confirmed');
+    } catch (e) {
+      console.error('Error approving payment:', e);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Delivered': return 'text-green-600 bg-green-50 border-green-100';
+      case 'Confirmed': return 'text-emerald-600 bg-emerald-50 border-emerald-100';
+      case 'Shipped': return 'text-blue-600 bg-blue-50 border-blue-100';
+      case 'Out for Delivery': return 'text-indigo-600 bg-indigo-50 border-indigo-100';
+      case 'Payment Verification Pending': return 'text-orange-600 bg-orange-50 border-orange-100 ring-2 ring-orange-200 animate-pulse';
+      case 'Processing': return 'text-amber-600 bg-amber-50 border-amber-100';
+      case 'Cancelled': return 'text-red-600 bg-red-50 border-red-100';
+      default: return 'text-gray-600 bg-gray-50 border-gray-100';
+    }
+  };
+
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch = 
+      order.orderId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.userEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.address?.phone?.includes(searchTerm) ||
+      order.paymentDetails?.utr?.includes(searchTerm);
+    
+    const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20">
+         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Syncing Financial Ledger...</p>
+      </div>
+    );
+  }
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 z-[100] backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-[850px] min-h-[500px] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative"
-            >
+    <div className="space-y-8 pb-20">
+      {/* Financial Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+         <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-20 transition-opacity">
+               <TrendingUp size={64} className="text-emerald-500" />
+            </div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Aggregate Revenue</p>
+            <h4 className="text-3xl font-black italic text-[#00081d] uppercase tracking-tighter">{formatINR(stats.totalRevenue)}</h4>
+            <div className="mt-4 flex items-center gap-2 text-emerald-500 font-black text-[10px] uppercase">
+               <TrendingUp size={12} /> Live Processing
+            </div>
+         </div>
+         <div className="bg-[#00081d] p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+            <p className="text-[10px] font-black text-blue-400/60 uppercase tracking-widest mb-2">Verification Queue</p>
+            <h4 className="text-3xl font-black italic text-white uppercase tracking-tighter">{stats.pendingVerification} Orders</h4>
+            <div className="mt-4 flex items-center gap-2 text-orange-400 font-black text-[10px] uppercase">
+               <Clock size={12} className="animate-pulse" /> Security Clearance Required
+            </div>
+         </div>
+         <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Daily Flow</p>
+            <h4 className="text-3xl font-black italic text-[#00081d] uppercase tracking-tighter">{stats.todayOrders} Initialized</h4>
+            <div className="mt-4 flex items-center gap-2 text-blue-600 font-black text-[10px] uppercase">
+               <History size={12} /> Last 24 Hours
+            </div>
+         </div>
+         <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Logistics Integrity</p>
+            <h4 className="text-3xl font-black italic text-[#00081d] uppercase tracking-tighter">{stats.successRate}% Success</h4>
+            <div className="mt-4 flex items-center gap-2 text-purple-600 font-black text-[10px] uppercase">
+               <BarChart3 size={12} /> Fulfilment Ratio
+            </div>
+         </div>
+      </div>
+
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 pt-4">
+        <div>
+           <h2 className="text-5xl font-black italic uppercase tracking-tighter text-[#00081d]">Transaction Vault</h2>
+           <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em] mt-2 ml-1">Deep Intelligence Ledger — {filteredOrders.length} records</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+           {['All', 'Payment Verification Pending', 'Confirmed', 'Shipped', 'Delivered'].map(s => (
               <button 
-                onClick={onClose}
-                className="absolute top-4 right-4 text-gray-400 hover:text-[#00081d] z-10 p-2 transition-colors"
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === s ? 'bg-[#00081d] text-white shadow-xl shadow-blue-500/10 scale-105' : 'bg-white text-gray-400 border border-gray-100 hover:border-blue-600'}`}
               >
-                <X size={24} />
+                {s === 'Payment Verification Pending' ? 'Verification' : s}
               </button>
+           ))}
+        </div>
+      </div>
 
-              {/* Left Side - Info */}
-              <div className="bg-[#00081d] text-white p-10 md:w-2/5 flex flex-col justify-between relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 blur-3xl rounded-full -mr-32 -mt-32" />
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-yellow-400/10 blur-3xl rounded-full -ml-32 -mb-32" />
-                
-                <div className="relative z-10">
-                  <h2 className="text-4xl font-black italic uppercase italic tracking-tighter mb-4 leading-none">
-                    Login to <br />
-                    <span className="text-yellow-400 not-italic">PRADUMANKART</span>
-                  </h2>
-                  <p className="text-gray-400 text-sm font-bold uppercase leading-relaxed tracking-wider opacity-80">
-                    Get access to your Orders, Wishlist and Recommendations
-                  </p>
+      <div className="relative group">
+         <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={20} />
+         <input 
+           type="text" 
+           placeholder="Search Protocol ID, End-User, Mobile, or Transaction Hash (UTR)..."
+           className="w-full bg-white border-2 border-gray-100 rounded-[2rem] py-6 pl-16 pr-8 font-black text-sm outline-none focus:border-blue-600 focus:shadow-2xl focus:shadow-blue-500/5 transition-all placeholder:text-gray-300"
+           value={searchTerm}
+           onChange={(e) => setSearchTerm(e.target.value)}
+         />
+      </div>
+
+      <div className="space-y-6">
+        {filteredOrders.map((order) => (
+          <div key={order.id} className={`bg-white border rounded-[3rem] overflow-hidden transition-all duration-500 ${expandedId === order.id ? 'border-blue-600 shadow-2xl scale-[1.01]' : 'border-gray-100 hover:border-gray-200 shadow-sm'}`}>
+            <div 
+              className="p-10 flex flex-wrap items-center justify-between gap-10 cursor-pointer select-none"
+              onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}
+            >
+              <div className="flex items-center gap-8">
+                <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-black transition-transform duration-500 ${expandedId === order.id ? 'rotate-[360deg]' : ''} ${order.paymentMethod === 'UPI' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-orange-500 text-white shadow-lg shadow-orange-600/20'}`}>
+                   {order.paymentMethod === 'UPI' ? <CheckCircle size={32} /> : <ShoppingBag size={32} />}
                 </div>
-
-                <div className="relative z-10 mt-auto space-y-6">
-                   <div className="w-16 h-16 bg-yellow-400 rounded-xl flex items-center justify-center p-3 shadow-2xl shadow-yellow-400/20">
-                      <ShoppingCart size={40} className="text-[#00081d] fill-current" />
-                   </div>
-                   <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-yellow-400">
-                         <ArrowRight size={14} /> Free delivery
-                      </div>
-                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50">
-                         <ArrowRight size={14} /> Secure payments
-                      </div>
-                   </div>
+                <div>
+                  <div className="flex items-center gap-3">
+                     <h3 className="font-black italic text-xl text-[#00081d] uppercase tracking-tighter">
+                        {order.orderId || `PK-${order.id.slice(-8).toUpperCase()}`}
+                     </h3>
+                     {order.paymentMethod === 'UPI' && (
+                        <span className="bg-blue-100 text-blue-600 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest italic">Digital Transfer</span>
+                     )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5">
+                     <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-full border border-gray-100">
+                        <Clock size={10} className="text-gray-400" />
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{order.createdAt?.toDate?.()?.toLocaleString() || 'Recent'}</p>
+                     </div>
+                     <span className="w-1 h-1 bg-gray-200 rounded-full" />
+                     <p className="text-[9px] font-black text-[#00081d] uppercase tracking-widest">{order.userEmail}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Right Side - Form */}
-              <div className="p-8 md:p-12 md:w-3/5 bg-white">
-                <form onSubmit={handleLogin} className="space-y-6 max-w-sm mx-auto">
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Email Address</label>
-                      <div className="relative group">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
-                        <input 
-                          type="email" 
-                          placeholder="Enter your email"
-                          className="w-full bg-gray-50 border-2 border-gray-50 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-blue-600 focus:bg-white text-sm font-bold transition-all"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
+              <div className="flex flex-wrap items-center gap-12">
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-2">Net Value</p>
+                  <p className="font-black text-2xl text-[#00081d]">{formatINR(order.totalAmount)}</p>
+                </div>
+                <div className={`px-6 py-3 border-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 transition-all ${getStatusColor(order.status)}`}>
+                  {order.status}
+                </div>
+                <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
+                  <ChevronDown className={`transition-transform duration-700 ${expandedId === order.id ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+            </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Password</label>
-                      <div className="relative group">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
-                        <input 
-                          type={showPassword ? "text" : "password"} 
-                          placeholder="••••••••"
-                          className="w-full bg-gray-50 border-2 border-gray-50 rounded-xl py-4 pl-12 pr-12 outline-none focus:border-blue-600 focus:bg-white text-sm font-bold transition-all"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
-                        >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between px-1">
-                    <label className="flex items-center gap-2 cursor-pointer group">
-                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600" />
-                      <span className="text-[11px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">Remember me</span>
-                    </label>
-                    <button type="button" className="text-[11px] font-black uppercase tracking-widest text-blue-600 hover:underline">Forgot?</button>
-                  </div>
-
-                  {error && (
-                    <div className="space-y-3">
-                      <div className="bg-red-50 text-red-500 p-3 rounded-lg text-[10px] font-black uppercase tracking-widest leading-tight border border-red-100 flex items-start gap-1.5">
-                        <AlertCircle size={14} className="shrink-0 text-red-500 mt-0.5" />
-                        <span>{error}</span>
-                      </div>
-                      
-                      {unauthorizedDomain && (
-                        <div className="p-3.5 bg-orange-50 border border-orange-200 rounded-lg text-left text-[11px] leading-relaxed text-orange-950 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar shadow-sm">
-                          <div className="flex items-center gap-1.5 border-b border-orange-100 pb-1.5">
-                            <Sparkles className="text-orange-500 animate-pulse" size={14} />
-                            <h4 className="font-bold text-[#00081d] text-xs uppercase tracking-tight">🚨 Unauthorized Domain Solution (हिन्दी):</h4>
+            <AnimatePresence>
+              {expandedId === order.id && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="px-12 pb-12 pt-4 border-t border-gray-50 bg-gray-50/10"
+                >
+                  {/* Digital Asset Verification */}
+                  {order.status === 'Payment Verification Pending' && (
+                    <div className="mb-12 p-8 bg-white border-2 border-orange-100 rounded-[3rem] shadow-xl shadow-orange-500/5 flex flex-col md:flex-row items-center justify-between gap-10">
+                       <div className="flex items-center gap-8">
+                          <div className="relative group/shot">
+                             <div 
+                               onClick={() => setShowScreenshot(order.paymentDetails?.screenshot)}
+                               className="w-24 h-24 bg-gray-100 rounded-[1.5rem] flex items-center justify-center text-gray-300 overflow-hidden cursor-pointer border-2 border-dashed border-gray-200 hover:border-blue-500 transition-all"
+                             >
+                                {order.paymentDetails?.screenshot ? (
+                                   <img src={order.paymentDetails.screenshot} className="w-full h-full object-cover group-hover/shot:scale-110 transition-transform" />
+                                ) : (
+                                   <Camera size={32} />
+                                )}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/shot:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-black uppercase">
+                                   <Eye size={16} />
+                                </div>
+                             </div>
                           </div>
-                          
-                          <p className="font-semibold text-gray-700 font-sans text-[10.5px]">
-                            इस आसान तरीके से एरर ठीक करें:
-                          </p>
-                          
-                          <ol className="list-decimal list-inside space-y-1 text-gray-700 font-medium text-[10.5px]">
-                            <li>अपने <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 underline font-extrabold">Firebase Console</a> में जाएँ।</li>
-                            <li>प्रोजेक्ट <code className="bg-gray-100 px-1 py-0.5 rounded text-red-600 font-mono font-bold text-[10px]">{activeFirebaseConfig.projectId}</code> को चुनें।</li>
-                            <li>लेफ्ट साइडबार में <strong className="font-bold text-gray-950">Build &gt; Authentication</strong> चुनें।</li>
-                            <li>ऊपर <strong className="font-bold text-gray-950">Settings</strong> टैब पर जाएँ।</li>
-                            <li>लेफ्ट मेनू में <strong className="font-bold text-[#fb641b]">Authorized Domains (अधिकृत डोमेन)</strong> चुनें।</li>
-                            <li><strong className="font-bold text-gray-950">Add Domain</strong> दबाएँ और नीचे दिए दोनों डोमेन जोड़ें:</li>
-                          </ol>
-
-                          <div className="space-y-2 bg-white p-1.5 rounded border border-orange-150 font-mono text-[9px] text-gray-600">
-                            <div className="p-1 hover:bg-gray-50 flex flex-col gap-0.5">
-                              <span className="font-bold text-blue-700 select-all break-all">ais-dev-lzyys7b3akwltoopmp5xzn-906285473239.asia-southeast1.run.app</span>
-                            </div>
-                            <div className="p-1 hover:bg-gray-50 flex flex-col gap-0.5 border-t border-gray-150">
-                              <span className="font-bold text-blue-700 select-all break-all">ais-pre-lzyys7b3akwltoopmp5xzn-906285473239.asia-southeast1.run.app</span>
-                            </div>
+                          <div>
+                             <h4 className="font-black italic text-[#00081d] text-lg uppercase tracking-tight">Security Clearance Required</h4>
+                             <div className="flex items-center gap-3 mt-1">
+                                <p className="text-[11px] font-bold text-gray-500">Hash (UTR): <span className="font-black text-blue-600 underline select-all">{order.paymentDetails?.utr || 'NOT_PROVIDED'}</span></p>
+                                <button onClick={() => { navigator.clipboard.writeText(order.paymentDetails?.utr || ''); alert('UTR COPIED'); }} className="text-blue-600 hover:scale-110 transition-transform">
+                                   <Copy size={14} />
+                                </button>
+                             </div>
+                             <div className="mt-3 flex items-center gap-2">
+                                <span className="w-2 h-2 bg-orange-500 rounded-full animate-ping" />
+                                <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest">Manual override active</span>
+                             </div>
                           </div>
-
-                          <p className="text-[9.5px] text-orange-900 font-bold bg-orange-100/40 p-1.5 rounded mt-1.5">
-                            💡 डोमेन जोड़कर पेज रीफ्रेश (Refresh) करें, फिर दोबारा लॉगिन करें!
-                          </p>
-                        </div>
-                      )}
-
-                      {popupBlocked && (
-                        <div className="p-3.5 bg-yellow-50 border border-yellow-200 rounded-lg text-left text-[11px] leading-relaxed text-yellow-950 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar shadow-sm animate-fade-in">
-                          <div className="flex items-center gap-1.5 border-b border-yellow-200 pb-1.5 border-dashed">
-                            <AlertCircle className="text-yellow-600 animate-pulse shrink-0" size={14} />
-                            <h4 className="font-bold text-[#00081d] text-xs uppercase tracking-tight">🚨 Popup Blocked Solution (हिन्दी):</h4>
-                          </div>
-                          
-                          <p className="font-semibold text-gray-700 font-sans text-[10.5px]">
-                            सुरक्षा कारणों से या iframe (AI Studio App Preview Layout) के कारण ब्राउज़र ने Google Login को ब्लॉक कर दिया है।
-                          </p>
-                          
-                          <p className="font-bold text-blue-700 text-[10.5px]">
-                            👉 इसे ठीक करने का सबसे आसान तरीका:
-                          </p>
-                          <ol className="list-decimal list-inside space-y-1.5 text-gray-700 font-medium text-[10.5px]">
-                            <li>इस स्क्रीन के ऊपर दाईं ओर दी गई <strong>'Open in a New Tab'</strong> (नए टैब में खोलें) बटन पर क्लिक करके ऐप को नए टैब में खोलें।</li>
-                            <li>वहाँ स्वतंत्र पेज पर Google Login बिना किसी रुकावट या पॉपअप ब्लॉक के तुरंत सफल होगा!</li>
-                          </ol>
-                        </div>
-                      )}
+                       </div>
+                       <div className="flex gap-4">
+                          <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                approvePayment(order.id);
+                            }}
+                            className="bg-[#00081d] text-white px-10 py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl hover:scale-105 transition-all flex items-center gap-2 group"
+                          >
+                             <CheckCircle2 size={16} className="group-hover:scale-125 transition-transform" /> Authorize Transaction
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                updateStatus(order.id, 'Cancelled');
+                            }}
+                            className="bg-white border-2 border-red-50 text-red-500 px-10 py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-50 transition-all"
+                          >
+                             Purge Request
+                          </button>
+                       </div>
                     </div>
                   )}
 
+                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
+                      {/* Products Inventory */}
+                      <div className="lg:col-span-2 space-y-8">
+                         <div className="flex items-center justify-between border-b-2 border-gray-50 pb-4">
+                            <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-[0.2em] flex items-center gap-2">
+                              <Package size={14} /> Intelligence Inventory
+                            </h4>
+                            <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest translate-y-1">{order.items?.length || 0} Units Manifested</span>
+                         </div>
+                         <div className="bg-white border border-gray-100 rounded-[2.5rem] overflow-hidden divide-y divide-gray-50 shadow-sm">
+                            {order.items?.map((item: any) => (
+                              <div key={item.id} className="p-8 flex items-center gap-8 group hover:bg-gray-50/50 transition-colors">
+                                 <div className="w-24 h-24 bg-gray-50 rounded-2xl p-4 flex items-center justify-center border border-gray-100 group-hover:scale-105 transition-transform duration-500">
+                                    <img src={item.image} className="max-h-full max-w-full object-contain mix-blend-multiply" alt="" />
+                                 </div>
+                                 <div className="flex-grow space-y-2">
+                                    <p className="font-black italic text-base text-[#00081d] uppercase tracking-tighter line-clamp-1">{item.name}</p>
+                                    <div className="flex items-center gap-4">
+                                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-1 rounded-lg">Quantified: {item.quantity}</span>
+                                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic">{formatINR(item.price)} per unit</span>
+                                    </div>
+                                 </div>
+                                 <div className="text-right">
+                                    <p className="text-[10px] font-black text-gray-300 uppercase italic mb-1">Subtotal</p>
+                                    <p className="font-black text-lg text-[#00081d] italic">{formatINR(item.price * item.quantity)}</p>
+                                 </div>
+                              </div>
+                            ))}
+                         </div>
+                      </div>
+
+                      {/* Control Panel & Logistics */}
+                      <div className="space-y-12">
+                         <div>
+                            <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-[0.2em] mb-6 flex items-center gap-2">
+                              <MapPin size={14} /> Recipient Vector
+                            </h4>
+                            <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 text-xs font-bold text-gray-500 leading-relaxed shadow-sm space-y-4">
+                               <div className="flex items-center justify-between border-b border-gray-50 pb-4 mb-4">
+                                  <p className="text-[#00081d] font-black italic uppercase text-lg tracking-tighter">{order.address?.name}</p>
+                                  <button onClick={() => navigator.clipboard.writeText(`${order.address?.name}\n${order.address?.phone}\n${order.address?.address}, ${order.address?.city}`)} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all">
+                                     <Copy size={16} />
+                                  </button>
+                               </div>
+                               <div className="space-y-1">
+                                  <p className="text-gray-900 font-black uppercase text-[10px]">{order.address?.address}</p>
+                                  <p>{order.address?.locality}</p>
+                                  <p>{order.address?.city}, {order.address?.state} - {order.address?.pincode}</p>
+                               </div>
+                               <div className="pt-4 flex items-center gap-4">
+                                  <a href={`tel:${order.address?.phone}`} className="flex-grow bg-[#00081d] text-white px-6 py-4 rounded-2xl font-black text-center text-[10px] uppercase tracking-widest border border-blue-900 shadow-xl shadow-blue-900/20">
+                                     SECURE CONTACT: {order.address?.phone}
+                                  </a>
+                               </div>
+                            </div>
+                         </div>
+
+                         <div className="space-y-6">
+                            <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-[0.2em] flex items-center gap-2">
+                              <BarChart3 size={14} /> Deployment Control
+                            </h4>
+                            <div className="grid grid-cols-1 gap-2 p-3 bg-white border border-gray-100 rounded-[2.5rem] shadow-sm">
+                               {STATUS_OPTIONS.map(status => (
+                                 <button 
+                                   key={status}
+                                   onClick={(e) => {
+                                       e.stopPropagation();
+                                       updateStatus(order.id, status);
+                                   }}
+                                   className={`w-full px-5 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-left flex items-center justify-between group/btn ${
+                                     order.status === status ? 'bg-[#00081d] text-white shadow-xl translate-x-1' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50/50'
+                                   }`}
+                                 >
+                                    {status}
+                                    {order.status === status && <CheckCircle size={14} className="text-blue-400" />}
+                                    {order.status !== status && <ChevronDown size={14} className="opacity-0 group-hover/btn:opacity-100 transition-opacity" />}
+                                 </button>
+                               ))}
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ))}
+      </div>
+
+      {/* Screenshot Modal Viewer */}
+      <AnimatePresence>
+         {showScreenshot && (
+            <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               onClick={() => setShowScreenshot(null)}
+               className="fixed inset-0 z-[999] bg-[#00081d]/95 backdrop-blur-2xl p-10 flex items-center justify-center cursor-zoom-out"
+            >
+               <motion.div 
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  onClick={e => e.stopPropagation()}
+                  className="bg-white p-4 rounded-[4rem] shadow-2xl relative max-w-2xl w-full border-8 border-white/10"
+               >
+                  <img src={showScreenshot} className="w-full h-auto rounded-[3rem] object-contain shadow-2xl" />
                   <button 
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-[#fb641b] text-white py-4 font-black rounded-xl shadow-xl hover:bg-[#e65a15] transition-all uppercase tracking-widest active:scale-95 disabled:opacity-50"
+                    onClick={() => setShowScreenshot(null)}
+                    className="absolute top-8 right-8 w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-red-500 shadow-2xl hover:scale-110 transition-transform"
                   >
-                    {loading ? 'Logging in...' : 'Login to Continue'}
+                     <XCircle size={32} />
                   </button>
-
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-100 italic font-black"></div>
-                    </div>
-                    <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
-                      <span className="bg-white px-4 text-gray-300">OR</span>
-                    </div>
-                  </div>
-
-                  <button 
-                    type="button"
-                    onClick={handleGoogleLogin}
-                    className="w-full bg-white text-[#00081d] py-4 font-black rounded-xl shadow-sm border-2 border-gray-100 flex items-center justify-center gap-3 hover:bg-gray-50 transition-all uppercase tracking-widest active:scale-95"
-                  >
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" className="w-5 h-5" />
-                    Continue with Google
-                  </button>
-
-                  <div className="text-center">
-                    <button type="button" className="text-gray-400 text-[10px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">
-                      New to PradumanKart? Create account
-                    </button>
-                  </div>
-                </form>
-              </div>
+               </motion.div>
             </motion.div>
-          </motion.div>
-        </>
+         )}
+      </AnimatePresence>
+
+      {filteredOrders.length === 0 && (
+        <div className="py-24 text-center bg-white rounded-[4rem] border-2 border-dashed border-gray-100 shadow-sm">
+           <div className="w-32 h-32 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-8 text-gray-200">
+              <ShoppingBag size={56} />
+           </div>
+           <p className="text-[#00081d] font-black italic uppercase tracking-tighter text-2xl">Vault Protocol: No Matching Records</p>
+           <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-3">Reset filters or check system connection</p>
+        </div>
       )}
-    </AnimatePresence>
+    </div>
   );
 }

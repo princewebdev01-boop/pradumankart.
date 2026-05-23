@@ -1,252 +1,155 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuthStore } from '../store/useAuthStore';
-import { motion } from 'motion/react';
-import { LogIn, ArrowLeft, ShieldCheck, Mail, Lock, Sparkles, ChevronRight, ShoppingCart, AlertCircle } from 'lucide-react';
+import { useCartStore } from '../store/useCartStore';
+import { ShoppingCart, Trash2, ShieldCheck, Truck, ChevronRight } from 'lucide-react';
+import { formatINR } from '../lib/utils';
+import { Link } from 'react-router-dom';
 
-export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const setIsAdmin = useAuthStore((state) => state.setIsAdmin);
-  const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle);
-  const loginWithEmail = useAuthStore((state) => state.loginWithEmail);
+export default function Cart() {
+  const { items, removeItem, updateQuantity, totalAmount, deliveryFee } = useCartStore();
+  
+  const totalItems = items.reduce((acc, item) => acc + item.quantity, 0);
+  const totalAmountValue = totalAmount();
+  const deliveryFeeValue = deliveryFee();
+  const savings = items.reduce((acc, item) => acc + (item.originalPrice - item.price) * item.quantity, 0);
 
-  const from = location.state?.from || '/';
-
-  const isPrivateAdminEntry = location.pathname === '/admin-login-private';
-
-  const [showProviderInfo, setShowProviderInfo] = useState(false);
-
-  const handleStandardLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    
-    try {
-      // If it's a private admin entry, we use the server-side JWT auth
-      if (isPrivateAdminEntry) {
-        const res = await fetch('/api/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        });
-        
-        const data = await res.json();
-        if (data.success) {
-          setIsAdmin(true);
-          navigate('/secure-admin-dashboard');
-          return;
-        } else {
-          setError(data.error || 'Invalid admin credentials');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Standard Firebase login
-      const success = await loginWithEmail(email, password);
-      if (success) {
-        navigate(from, { replace: true });
-      }
-    } catch (err: any) {
-      console.error('Login failed:', err);
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setError('Invalid email or password. Please try again.');
-      } else if (err.code === 'auth/operation-not-allowed') {
-        setError('Email/Password login is not enabled in Firebase.');
-        setShowProviderInfo(true);
-      } else {
-        setError(err.message || 'Login failed. Please check your connection.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLoginAction = async () => {
-    setLoading(true);
-    setError('');
-    setShowProviderInfo(false);
-    try {
-      const success = await loginWithGoogle();
-      if (success) {
-        navigate(from, { replace: true });
-      } else {
-        setError('Google login failed or access denied');
-      }
-    } catch (e: any) {
-      console.error('Google Login Error:', e);
-      if (e.code === 'auth/operation-not-allowed') {
-        setError('Google Login is not enabled in Firebase. Please enable it in your Console.');
-        setShowProviderInfo(true);
-      } else if (e.code === 'auth/popup-blocked') {
-        setError('Popup was blocked by your browser. Please allow popups.');
-      } else {
-        setError(e.message || 'An unexpected error occurred');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (items.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 flex flex-col items-center justify-center bg-white shadow-xl my-10 rounded-2xl border border-gray-100">
+        <div className="w-32 h-32 bg-yellow-50 rounded-full flex items-center justify-center mb-8">
+           <ShoppingCart size={64} className="text-yellow-500 opacity-20" />
+        </div>
+        <h2 className="text-3xl font-black text-[#00081d] italic uppercase tracking-tighter mb-2">Your cart is empty!</h2>
+        <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-8">Add items to it now to start shopping</p>
+        <Link to="/" className="bg-[#fb641b] text-white px-12 py-4 rounded-lg font-black shadow-2xl hover:bg-[#e65a15] uppercase tracking-widest active:scale-95 transition-all">
+          Shop Now
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-[#f1f3f6] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Decorative Elements */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-400 opacity-10 blur-3xl -ml-48 -mt-48 rounded-full" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-[#fb641b] opacity-10 blur-3xl -mr-48 -mb-48 rounded-full" />
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-gray-100 relative z-10"
-      >
-        {/* Left Side: Brand & Visual */}
-        <div className="bg-[#00081d] text-white p-12 md:w-2/5 flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 opacity-20 blur-3xl -mr-16 -mt-16" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-yellow-400 opacity-10 blur-3xl -ml-16 -mb-16" />
-          
-          <div className="relative z-10">
-            <Link to="/" className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-white transition-colors mb-12">
-              <ArrowLeft size={16} /> Back to Home
-            </Link>
-            <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-4 leading-none">
-              {isPrivateAdminEntry ? 'Admin' : 'Welcome'} <span className="text-blue-500">{isPrivateAdminEntry ? 'Portal' : 'PradumanKart'}</span>
-            </h2>
-            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest leading-relaxed">
-              {isPrivateAdminEntry 
-                ? 'Secured management interface for authorized personnel only.' 
-                : 'Unlock the best deals on electronics, fashion, and more. Your shortcut to premium shopping.'}
-            </p>
-          </div>
-
-          <div className="relative mt-8 group">
-            <div className="absolute inset-0 bg-gradient-to-t from-[#00081d] to-transparent z-10" />
-            <img 
-              src={isPrivateAdminEntry 
-                ? "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=400&h=400" 
-                : "https://static-assets-web.flixcart.com/fk-p-linchpin-web/fk-cp-zion/img/login_img_c4a81e.png"} 
-              alt="Login Visual" 
-              className="w-full grayscale opacity-40 group-hover:opacity-60 transition-opacity duration-700 aspect-square object-cover"
-            />
-            <div className="absolute bottom-4 left-0 right-0 z-20 text-center">
-              <div className="inline-block bg-yellow-400 text-[#00081d] p-3 rounded-xl shadow-2xl rotate-3 group-hover:rotate-0 transition-transform">
-                <ShoppingCart size={32} className="fill-current" />
-              </div>
+    <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
+      {/* Items Section */}
+      <div className="flex-grow space-y-4">
+        <div className="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-xl font-black text-[#00081d] italic uppercase tracking-tighter">My Cart ({totalItems})</h2>
+            <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+              <Truck size={14} /> FREE Delivery
             </div>
           </div>
-        </div>
 
-        {/* Right Side: Login Form */}
-        <div className="p-10 flex-grow bg-white">
-          <div className="mb-10">
-             <h3 className="text-2xl font-black text-[#00081d] uppercase italic tracking-tighter">
-               {isPrivateAdminEntry ? 'Private Entrance' : 'Account Access'}
-             </h3>
-             <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-1">
-               {isPrivateAdminEntry ? 'Encrypted Session Required' : 'Please enter your credentials below'}
-             </p>
-          </div>
+          <div className="divide-y divide-gray-50">
+            {items.map((item) => (
+              <div key={item.id} className="p-6 flex flex-col md:flex-row gap-8 hover:bg-gray-50/50 transition-colors">
+                <div className="flex flex-col items-center gap-6">
+                  <div className="w-32 h-32 bg-white rounded-lg border border-gray-100 p-2 flex items-center justify-center shadow-sm">
+                    <img src={item.images[0]} alt={item.name} className="max-h-full max-w-full object-contain" />
+                  </div>
+                  <div className="flex items-center bg-white border-2 border-gray-100 rounded-lg overflow-hidden shadow-sm">
+                    <button 
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                      className="w-10 h-10 flex items-center justify-center text-lg font-black hover:bg-gray-100 transition-colors"
+                    >
+                      -
+                    </button>
+                    <span className="w-12 text-center text-sm font-black text-[#00081d]">{item.quantity}</span>
+                    <button 
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="w-10 h-10 flex items-center justify-center text-lg font-black hover:bg-gray-100 transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
 
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="bg-red-50 border-l-4 border-red-500 p-4 mb-8 rounded-r-lg"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle size={16} className="text-red-500 shrink-0" />
-                <div>
-                  <p className="text-red-700 text-xs font-bold uppercase tracking-tight">{error}</p>
-                  {showProviderInfo && (
-                    <div className="mt-2 p-2 bg-white/50 rounded border border-red-100 text-[10px] leading-relaxed text-red-600">
-                      To fix this: Go to <a href="https://console.firebase.google.com/" target="_blank" className="underline">Firebase Console</a> &gt; Build &gt; Authentication &gt; Settings &gt; Sign-in method and enable <strong>Google</strong> provider.
+                <div className="flex-grow flex flex-col">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-black text-[#00081d] leading-tight hover:text-blue-600 cursor-pointer uppercase italic">
+                        {item.name}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-widest">{item.category}</p>
                     </div>
-                  )}
+                    <button 
+                      onClick={() => removeItem(item.id)}
+                      className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 mt-4">
+                    <span className="text-2xl font-black text-[#00081d]">₹{item.price.toLocaleString()}</span>
+                    <span className="text-sm text-gray-400 line-through font-bold">₹{item.originalPrice.toLocaleString()}</span>
+                    <span className="text-xs text-green-600 font-black uppercase tracking-widest">{item.discount}% Off</span>
+                  </div>
+
+                  <div className="mt-auto pt-8 flex gap-6">
+                    <button className="text-[10px] font-black uppercase tracking-widest text-[#00081d] hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600 transition-all">Save for later</button>
+                    <button 
+                      onClick={() => removeItem(item.id)}
+                      className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-600 border-b-2 border-transparent hover:border-red-600 transition-all"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="md:w-48 text-[11px] font-bold text-gray-500 uppercase tracking-tight text-right hidden md:block">
+                  Delivery by <span className="text-[#00081d]">Tomorrow</span> | <span className="text-green-600 font-black">FREE</span>
                 </div>
               </div>
-            </motion.div>
-          )}
-
-          <form onSubmit={handleStandardLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Email or Phone</label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
-                <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-gray-50 border-2 border-transparent py-4 pl-12 rounded-xl focus:bg-white focus:border-blue-600 outline-none text-sm font-bold transition-all"
-                  placeholder="Enter your address"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-gray-50 border-2 border-transparent py-4 pl-12 rounded-xl focus:bg-white focus:border-blue-600 outline-none text-sm font-bold transition-all"
-                  placeholder="Keep it secret"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button type="button" className="text-[10px] font-black uppercase tracking-widest text-blue-600 hover:underline">Forgot password?</button>
-            </div>
-
-            <button 
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#fb641b] text-white py-4 font-black rounded-xl shadow-xl shadow-orange-500/10 hover:bg-[#e65a15] transition-all uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2 group disabled:opacity-50"
-            >
-              {loading ? 'Validating...' : 'Sign In'} <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-          </form>
-
-          <div className="relative my-10">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-100"></div>
-            </div>
-            <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
-              <span className="bg-white px-4 text-gray-300">Or Continue with Social</span>
-            </div>
+            ))}
           </div>
 
-          <button 
-            type="button"
-            onClick={handleGoogleLoginAction}
-            disabled={loading}
-            className="w-full bg-white text-[#00081d] py-4 font-black rounded-xl shadow-sm border-2 border-gray-100 flex items-center justify-center gap-3 hover:border-blue-600 transition-all uppercase tracking-widest active:scale-95 disabled:opacity-50"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-            Google Login
-          </button>
-
-          <div className="text-center mt-12 bg-gray-50 p-4 rounded-xl border border-gray-100">
-             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-               New to PRADUMANKART? <Link to="/signup" className="text-blue-600 hover:underline">Create an account</Link>
-             </p>
+          <div className="p-6 bg-white border-t border-gray-100 sticky bottom-0 z-10 shadow-2xl flex justify-end">
+            <Link to="/checkout" className="w-full md:w-auto bg-[#fb641b] text-white px-16 py-4 rounded-lg font-black shadow-2xl hover:bg-[#e65a15] flex items-center justify-center gap-2 uppercase tracking-widest active:scale-95 transition-all">
+              Place Order <ChevronRight size={20} />
+            </Link>
           </div>
         </div>
-      </motion.div>
+      </div>
 
-      <div className="mt-12 flex items-center gap-6 opacity-30 select-none pointer-events-none">
-         <ShieldCheck size={40} className="text-gray-400" />
-         <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 max-w-[200px]">
-           Secured by Bank-Grade RSA Encryption Protocols. 
-         </div>
+      {/* Price Details Section */}
+      <div className="lg:w-96 flex-shrink-0">
+        <div className="bg-white shadow-sm rounded-xl border border-gray-100 sticky top-24 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <h3 className="text-[#00081d] font-black uppercase text-xs tracking-widest italic leading-none">Price Details</h3>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="space-y-4 text-sm font-bold text-gray-500">
+              <div className="flex justify-between uppercase tracking-tight">
+                <span>Price ({totalItems} items)</span>
+                <span className="text-[#00081d]">₹{items.reduce((acc, i) => acc + i.originalPrice * i.quantity, 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between uppercase tracking-tight">
+                <span>Discount</span>
+                <span className="text-green-600">- ₹{savings.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between uppercase tracking-tight">
+                <span>Delivery Charges</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-300 line-through">₹69</span>
+                  <span className="text-green-600 font-black uppercase tracking-widest text-[10px]">Free</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="pt-6 border-t-2 border-dashed border-gray-100 flex justify-between items-center">
+               <span className="text-lg font-black text-[#00081d] uppercase italic tracking-tighter">Total Amount</span>
+               <span className="text-2xl font-black text-[#00081d]">₹{(totalAmountValue + deliveryFeeValue).toLocaleString()}</span>
+            </div>
+
+            <div className="bg-green-50 text-green-700 font-black text-[10px] py-3 rounded-lg uppercase tracking-widest text-center border border-green-100">
+              You will save ₹{savings.toLocaleString()} on this order
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-start gap-4 p-4 text-gray-400 font-bold text-[11px] leading-tight uppercase tracking-widest">
+          <ShieldCheck size={32} className="text-blue-600 shrink-0" />
+          <span>Safe and Secure Payments. Easy returns. 100% Authentic products. Verified Seller Network.</span>
+        </div>
       </div>
     </div>
   );

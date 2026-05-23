@@ -107,6 +107,7 @@ export default function Navbar() {
                         await loginWithGoogle();
                       } catch (err) {
                         console.error(err);
+                        navigate('/login');
                       }
                     }}
                     className="hidden xl:flex items-center gap-2 bg-yellow-400 text-[#00081d] px-4 py-1.5 font-bold rounded-sm text-sm hover:bg-yellow-500 transition-colors shadow-sm whitespace-nowrap"
