@@ -30,7 +30,9 @@ async function startServer() {
   // Admin Login (JWT)
   app.post("/api/admin/login", (req, res) => {
     const { email, password } = req.body;
-    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+    const adminEmail = process.env.ADMIN_EMAIL || 'princewebdev01@gmail.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'namaste papa';
+    if (email === adminEmail && password === adminPassword) {
       const token = jwt.sign({ role: 'admin' }, process.env.ADMIN_JWT_SECRET || 'secret', { expiresIn: '1d' });
       res.cookie('admin_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
       return res.json({ success: true });
