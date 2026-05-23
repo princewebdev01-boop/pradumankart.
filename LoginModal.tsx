@@ -1,156 +1,272 @@
-import { useCartStore } from '../store/useCartStore';
-import { ShoppingCart, Trash2, ShieldCheck, Truck, ChevronRight } from 'lucide-react';
-import { formatINR } from '../lib/utils';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, Mail, Lock, Eye, EyeOff, ShoppingCart, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
+import { auth, activeFirebaseConfig } from '../../lib/firebase';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useAuthStore } from '../../store/useAuthStore';
 
-export default function Cart() {
-  const { items, removeItem, updateQuantity, totalAmount, deliveryFee } = useCartStore();
-  
-  const totalItems = items.reduce((acc, item) => acc + item.quantity, 0);
-  const totalAmountValue = totalAmount();
-  const deliveryFeeValue = deliveryFee();
-  const savings = items.reduce((acc, item) => acc + (item.originalPrice - item.price) * item.quantity, 0);
+interface LoginModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
-  if (items.length === 0) {
-    return (
-      <div className="max-w-xl mx-auto px-4 py-20 flex flex-col items-center justify-center bg-white shadow-xl my-10 rounded-2xl border border-gray-100">
-        <div className="w-32 h-32 bg-yellow-50 rounded-full flex items-center justify-center mb-8">
-           <ShoppingCart size={64} className="text-yellow-500 opacity-20" />
-        </div>
-        <h2 className="text-3xl font-black text-[#00081d] italic uppercase tracking-tighter mb-2">Your cart is empty!</h2>
-        <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-8">Add items to it now to start shopping</p>
-        <Link to="/" className="bg-[#fb641b] text-white px-12 py-4 rounded-lg font-black shadow-2xl hover:bg-[#e65a15] uppercase tracking-widest active:scale-95 transition-all">
-          Shop Now
-        </Link>
-      </div>
-    );
-  }
+export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState(false);
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const { setUser, loginWithGoogle } = useAuthStore();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      setUser(userCredential.user);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setUnauthorizedDomain(false);
+    setPopupBlocked(false);
+    try {
+      await loginWithGoogle();
+      onClose();
+    } catch (err: any) {
+      console.error('Google Login Error:', err);
+      const isPopupError = err.code === 'auth/popup-blocked' || 
+                           err.code === 'auth/cancelled-popup-request' || 
+                           (err.message && (err.message.includes('popup-blocked') || err.message.includes('cancelled-popup-request')));
+
+      if (err.code === 'auth/unauthorized-domain' || (err.message && err.message.includes('unauthorized-domain'))) {
+        setError('Google Login Error: Firebase has blocked this domain as Unauthorized. Please add this domain in Firebase Console.');
+        setUnauthorizedDomain(true);
+      } else if (isPopupError) {
+        setError('Google Login Popup Error: The popup was either blocked by your browser or cancelled.');
+        setPopupBlocked(true);
+      } else {
+        setError(err.message || 'Google login failed');
+      }
+    }
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
-      {/* Items Section */}
-      <div className="flex-grow space-y-4">
-        <div className="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-            <h2 className="text-xl font-black text-[#00081d] italic uppercase tracking-tighter">My Cart ({totalItems})</h2>
-            <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-              <Truck size={14} /> FREE Delivery
-            </div>
-          </div>
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 z-[100] backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-[850px] min-h-[500px] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative"
+            >
+              <button 
+                onClick={onClose}
+                className="absolute top-4 right-4 text-gray-400 hover:text-[#00081d] z-10 p-2 transition-colors"
+              >
+                <X size={24} />
+              </button>
 
-          <div className="divide-y divide-gray-50">
-            {items.map((item) => (
-              <div key={item.id} className="p-6 flex flex-col md:flex-row gap-8 hover:bg-gray-50/50 transition-colors">
-                <div className="flex flex-col items-center gap-6">
-                  <div className="w-32 h-32 bg-white rounded-lg border border-gray-100 p-2 flex items-center justify-center shadow-sm">
-                    <img src={item.images[0]} alt={item.name} className="max-h-full max-w-full object-contain" />
-                  </div>
-                  <div className="flex items-center bg-white border-2 border-gray-100 rounded-lg overflow-hidden shadow-sm">
-                    <button 
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="w-10 h-10 flex items-center justify-center text-lg font-black hover:bg-gray-100 transition-colors"
-                    >
-                      -
-                    </button>
-                    <span className="w-12 text-center text-sm font-black text-[#00081d]">{item.quantity}</span>
-                    <button 
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="w-10 h-10 flex items-center justify-center text-lg font-black hover:bg-gray-100 transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
+              {/* Left Side - Info */}
+              <div className="bg-[#00081d] text-white p-10 md:w-2/5 flex flex-col justify-between relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 blur-3xl rounded-full -mr-32 -mt-32" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-yellow-400/10 blur-3xl rounded-full -ml-32 -mb-32" />
+                
+                <div className="relative z-10">
+                  <h2 className="text-4xl font-black italic uppercase italic tracking-tighter mb-4 leading-none">
+                    Login to <br />
+                    <span className="text-yellow-400 not-italic">PRADUMANKART</span>
+                  </h2>
+                  <p className="text-gray-400 text-sm font-bold uppercase leading-relaxed tracking-wider opacity-80">
+                    Get access to your Orders, Wishlist and Recommendations
+                  </p>
                 </div>
 
-                <div className="flex-grow flex flex-col">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="text-lg font-black text-[#00081d] leading-tight hover:text-blue-600 cursor-pointer uppercase italic">
-                        {item.name}
-                      </h3>
-                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-widest">{item.category}</p>
+                <div className="relative z-10 mt-auto space-y-6">
+                   <div className="w-16 h-16 bg-yellow-400 rounded-xl flex items-center justify-center p-3 shadow-2xl shadow-yellow-400/20">
+                      <ShoppingCart size={40} className="text-[#00081d] fill-current" />
+                   </div>
+                   <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-yellow-400">
+                         <ArrowRight size={14} /> Free delivery
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50">
+                         <ArrowRight size={14} /> Secure payments
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              {/* Right Side - Form */}
+              <div className="p-8 md:p-12 md:w-3/5 bg-white">
+                <form onSubmit={handleLogin} className="space-y-6 max-w-sm mx-auto">
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Email Address</label>
+                      <div className="relative group">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
+                        <input 
+                          type="email" 
+                          placeholder="Enter your email"
+                          className="w-full bg-gray-50 border-2 border-gray-50 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-blue-600 focus:bg-white text-sm font-bold transition-all"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                        />
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => removeItem(item.id)}
-                      className="text-gray-300 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 size={20} />
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Password</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-600 transition-colors" size={18} />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          placeholder="••••••••"
+                          className="w-full bg-gray-50 border-2 border-gray-50 rounded-xl py-4 pl-12 pr-12 outline-none focus:border-blue-600 focus:bg-white text-sm font-bold transition-all"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between px-1">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600" />
+                      <span className="text-[11px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">Remember me</span>
+                    </label>
+                    <button type="button" className="text-[11px] font-black uppercase tracking-widest text-blue-600 hover:underline">Forgot?</button>
+                  </div>
+
+                  {error && (
+                    <div className="space-y-3">
+                      <div className="bg-red-50 text-red-500 p-3 rounded-lg text-[10px] font-black uppercase tracking-widest leading-tight border border-red-100 flex items-start gap-1.5">
+                        <AlertCircle size={14} className="shrink-0 text-red-500 mt-0.5" />
+                        <span>{error}</span>
+                      </div>
+                      
+                      {unauthorizedDomain && (
+                        <div className="p-3.5 bg-orange-50 border border-orange-200 rounded-lg text-left text-[11px] leading-relaxed text-orange-950 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar shadow-sm">
+                          <div className="flex items-center gap-1.5 border-b border-orange-100 pb-1.5">
+                            <Sparkles className="text-orange-500 animate-pulse" size={14} />
+                            <h4 className="font-bold text-[#00081d] text-xs uppercase tracking-tight">🚨 Unauthorized Domain Solution (हिन्दी):</h4>
+                          </div>
+                          
+                          <p className="font-semibold text-gray-700 font-sans text-[10.5px]">
+                            इस आसान तरीके से एरर ठीक करें:
+                          </p>
+                          
+                          <ol className="list-decimal list-inside space-y-1 text-gray-700 font-medium text-[10.5px]">
+                            <li>अपने <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 underline font-extrabold">Firebase Console</a> में जाएँ।</li>
+                            <li>प्रोजेक्ट <code className="bg-gray-100 px-1 py-0.5 rounded text-red-600 font-mono font-bold text-[10px]">{activeFirebaseConfig.projectId}</code> को चुनें।</li>
+                            <li>लेफ्ट साइडबार में <strong className="font-bold text-gray-950">Build &gt; Authentication</strong> चुनें।</li>
+                            <li>ऊपर <strong className="font-bold text-gray-950">Settings</strong> टैब पर जाएँ।</li>
+                            <li>लेफ्ट मेनू में <strong className="font-bold text-[#fb641b]">Authorized Domains (अधिकृत डोमेन)</strong> चुनें।</li>
+                            <li><strong className="font-bold text-gray-950">Add Domain</strong> दबाएँ और नीचे दिए दोनों डोमेन जोड़ें:</li>
+                          </ol>
+
+                          <div className="space-y-2 bg-white p-1.5 rounded border border-orange-150 font-mono text-[9px] text-gray-600">
+                            <div className="p-1 hover:bg-gray-50 flex flex-col gap-0.5">
+                              <span className="font-bold text-blue-700 select-all break-all">ais-dev-lzyys7b3akwltoopmp5xzn-906285473239.asia-southeast1.run.app</span>
+                            </div>
+                            <div className="p-1 hover:bg-gray-50 flex flex-col gap-0.5 border-t border-gray-150">
+                              <span className="font-bold text-blue-700 select-all break-all">ais-pre-lzyys7b3akwltoopmp5xzn-906285473239.asia-southeast1.run.app</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[9.5px] text-orange-900 font-bold bg-orange-100/40 p-1.5 rounded mt-1.5">
+                            💡 डोमेन जोड़कर पेज रीफ्रेश (Refresh) करें, फिर दोबारा लॉगिन करें!
+                          </p>
+                        </div>
+                      )}
+
+                      {popupBlocked && (
+                        <div className="p-3.5 bg-yellow-50 border border-yellow-200 rounded-lg text-left text-[11px] leading-relaxed text-yellow-950 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar shadow-sm animate-fade-in">
+                          <div className="flex items-center gap-1.5 border-b border-yellow-200 pb-1.5 border-dashed">
+                            <AlertCircle className="text-yellow-600 animate-pulse shrink-0" size={14} />
+                            <h4 className="font-bold text-[#00081d] text-xs uppercase tracking-tight">🚨 Popup Blocked Solution (हिन्दी):</h4>
+                          </div>
+                          
+                          <p className="font-semibold text-gray-700 font-sans text-[10.5px]">
+                            सुरक्षा कारणों से या iframe (AI Studio App Preview Layout) के कारण ब्राउज़र ने Google Login को ब्लॉक कर दिया है।
+                          </p>
+                          
+                          <p className="font-bold text-blue-700 text-[10.5px]">
+                            👉 इसे ठीक करने का सबसे आसान तरीका:
+                          </p>
+                          <ol className="list-decimal list-inside space-y-1.5 text-gray-700 font-medium text-[10.5px]">
+                            <li>इस स्क्रीन के ऊपर दाईं ओर दी गई <strong>'Open in a New Tab'</strong> (नए टैब में खोलें) बटन पर क्लिक करके ऐप को नए टैब में खोलें।</li>
+                            <li>वहाँ स्वतंत्र पेज पर Google Login बिना किसी रुकावट या पॉपअप ब्लॉक के तुरंत सफल होगा!</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-[#fb641b] text-white py-4 font-black rounded-xl shadow-xl hover:bg-[#e65a15] transition-all uppercase tracking-widest active:scale-95 disabled:opacity-50"
+                  >
+                    {loading ? 'Logging in...' : 'Login to Continue'}
+                  </button>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-100 italic font-black"></div>
+                    </div>
+                    <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
+                      <span className="bg-white px-4 text-gray-300">OR</span>
+                    </div>
+                  </div>
+
+                  <button 
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    className="w-full bg-white text-[#00081d] py-4 font-black rounded-xl shadow-sm border-2 border-gray-100 flex items-center justify-center gap-3 hover:bg-gray-50 transition-all uppercase tracking-widest active:scale-95"
+                  >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" className="w-5 h-5" />
+                    Continue with Google
+                  </button>
+
+                  <div className="text-center">
+                    <button type="button" className="text-gray-400 text-[10px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">
+                      New to PradumanKart? Create account
                     </button>
                   </div>
-                  
-                  <div className="flex items-center gap-3 mt-4">
-                    <span className="text-2xl font-black text-[#00081d]">₹{item.price.toLocaleString()}</span>
-                    <span className="text-sm text-gray-400 line-through font-bold">₹{item.originalPrice.toLocaleString()}</span>
-                    <span className="text-xs text-green-600 font-black uppercase tracking-widest">{item.discount}% Off</span>
-                  </div>
-
-                  <div className="mt-auto pt-8 flex gap-6">
-                    <button className="text-[10px] font-black uppercase tracking-widest text-[#00081d] hover:text-blue-600 border-b-2 border-transparent hover:border-blue-600 transition-all">Save for later</button>
-                    <button 
-                      onClick={() => removeItem(item.id)}
-                      className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-600 border-b-2 border-transparent hover:border-red-600 transition-all"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-
-                <div className="md:w-48 text-[11px] font-bold text-gray-500 uppercase tracking-tight text-right hidden md:block">
-                  Delivery by <span className="text-[#00081d]">Tomorrow</span> | <span className="text-green-600 font-black">FREE</span>
-                </div>
+                </form>
               </div>
-            ))}
-          </div>
-
-          <div className="p-6 bg-white border-t border-gray-100 sticky bottom-0 z-10 shadow-2xl flex justify-end">
-            <Link to="/checkout" className="w-full md:w-auto bg-[#fb641b] text-white px-16 py-4 rounded-lg font-black shadow-2xl hover:bg-[#e65a15] flex items-center justify-center gap-2 uppercase tracking-widest active:scale-95 transition-all">
-              Place Order <ChevronRight size={20} />
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Price Details Section */}
-      <div className="lg:w-96 flex-shrink-0">
-        <div className="bg-white shadow-sm rounded-xl border border-gray-100 sticky top-24 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-            <h3 className="text-[#00081d] font-black uppercase text-xs tracking-widest italic leading-none">Price Details</h3>
-          </div>
-          <div className="p-6 space-y-6">
-            <div className="space-y-4 text-sm font-bold text-gray-500">
-              <div className="flex justify-between uppercase tracking-tight">
-                <span>Price ({totalItems} items)</span>
-                <span className="text-[#00081d]">₹{items.reduce((acc, i) => acc + i.originalPrice * i.quantity, 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between uppercase tracking-tight">
-                <span>Discount</span>
-                <span className="text-green-600">- ₹{savings.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between uppercase tracking-tight">
-                <span>Delivery Charges</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-300 line-through">₹69</span>
-                  <span className="text-green-600 font-black uppercase tracking-widest text-[10px]">Free</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="pt-6 border-t-2 border-dashed border-gray-100 flex justify-between items-center">
-               <span className="text-lg font-black text-[#00081d] uppercase italic tracking-tighter">Total Amount</span>
-               <span className="text-2xl font-black text-[#00081d]">₹{(totalAmountValue + deliveryFeeValue).toLocaleString()}</span>
-            </div>
-
-            <div className="bg-green-50 text-green-700 font-black text-[10px] py-3 rounded-lg uppercase tracking-widest text-center border border-green-100">
-              You will save ₹{savings.toLocaleString()} on this order
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-start gap-4 p-4 text-gray-400 font-bold text-[11px] leading-tight uppercase tracking-widest">
-          <ShieldCheck size={32} className="text-blue-600 shrink-0" />
-          <span>Safe and Secure Payments. Easy returns. 100% Authentic products. Verified Seller Network.</span>
-        </div>
-      </div>
-    </div>
+            </motion.div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
